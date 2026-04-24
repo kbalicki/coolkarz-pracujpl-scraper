@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Oferty zagraniczne — Pracuj.pl Scraper{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Oferty zagraniczne</h2>
+    {% if data.date %}
+        <p class="meta">Ostatnia aktualizacja: {{ data.date[:19].replace('T', ' ') }} &middot; Znaleziono: <strong>{{ data.count }}</strong> ofert</p>
+    {% endif %}
+
+    {% if data.offers %}
+    <div style="overflow-x:auto">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Nazwa oferty</th>
+                    <th>Widełki</th>
+                    <th>Kraj</th>
+                    <th>Link</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for o in data.offers %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><strong>{{ o.title }}</strong></td>
+                    <td>
+                        {% if o.salary %}
+                            {{ o.salary }}
+                        {% else %}
+                            <span class="badge badge-warn">BRAK</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if o.multi %}
+                            <span class="badge">WIELE LOKALIZACJI</span><br>
+                            <small>{{ o.locations | map(attribute='region') | join(', ') }}</small>
+                        {% else %}
+                            {{ o.region.split(',')[-1].strip() if o.region else '' }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if o.multi %}
+                            {% for loc in o.locations %}
+                                <a href="{{ loc.link }}" target="_blank">{{ loc.region }}</a>{% if not loop.last %}<br>{% endif %}
+                            {% endfor %}
+                        {% else %}
+                            <a href="{{ o.link }}" target="_blank">Zobacz ofertę</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <div class="empty">
+            <p>Brak ofert. Scraper jeszcze nie został uruchomiony lub brak ofert spełniających kryteria.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Pracuj.pl Scraper{% endblock %}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #1a1a2e; line-height: 1.6; }
+        .navbar { background: #1a1a2e; padding: 14px 32px; display: flex; align-items: center; justify-content: space-between; }
+        .navbar a { color: #e0e0e0; text-decoration: none; font-size: 14px; margin-left: 20px; }
+        .navbar a:hover { color: #fff; }
+        .navbar .brand { color: #fff; font-weight: 700; font-size: 18px; margin-left: 0; }
+        .container { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
+        .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); padding: 28px; margin-bottom: 24px; }
+        .card h2 { margin-bottom: 16px; font-size: 22px; color: #1a1a2e; }
+        .meta { color: #666; font-size: 14px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #1a1a2e; color: #fff; text-align: left; padding: 12px 16px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+        th:first-child { border-radius: 8px 0 0 0; }
+        th:last-child { border-radius: 0 8px 0 0; }
+        td { padding: 12px 16px; border-bottom: 1px solid #eee; font-size: 14px; }
+        tr:hover td { background: #f0f4ff; }
+        td a { color: #2563eb; text-decoration: none; }
+        td a:hover { text-decoration: underline; }
+        .badge { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .badge-warn { background: #fef3c7; color: #92400e; }
+        .flash { background: #d1fae5; color: #065f46; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+        input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; }
+        .help { font-size: 12px; color: #888; margin-bottom: 16px; }
+        button, .btn { background: #2563eb; color: #fff; border: none; padding: 10px 24px; border-radius: 8px; font-size: 14px; cursor: pointer; text-decoration: none; display: inline-block; }
+        button:hover, .btn:hover { background: #1d4ed8; }
+        .empty { text-align: center; padding: 60px 20px; color: #888; }
+        @media (max-width: 768px) {
+            .navbar { padding: 12px 16px; }
+            .container { padding: 0 12px; }
+            .card { padding: 16px; }
+            th, td { padding: 8px 10px; font-size: 13px; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">Pracuj.pl Scraper</a>
+        <div>
+            <a href="/">Oferty</a>
+            {% if session.get('logged_in') %}
+                <a href="/settings">Ustawienia</a>
+                <a href="/logout">Wyloguj</a>
+            {% else %}
+                <a href="/login">Zaloguj</a>
+            {% endif %}
+        </div>
+    </nav>
+    <div class="container">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for msg in messages %}
+                    <div class="flash">{{ msg }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
