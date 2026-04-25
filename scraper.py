@@ -15,8 +15,12 @@ from playwright_stealth import Stealth
 
 load_dotenv()
 
-BASE_URL = os.getenv("BASE_URL", "https://www.pracuj.pl/praca/zagranica;r,17?sc=0")
-PAGES = int(os.getenv("PAGES", "3"))
+URLS_FILE = Path(__file__).parent / "urls.txt"
+DEFAULT_URLS = [
+    "https://www.pracuj.pl/praca/zagranica;r,17?sc=0",
+    "https://www.pracuj.pl/praca/zagranica;r,17?sc=0&pn=2",
+    "https://www.pracuj.pl/praca/zagranica;r,17?sc=0&pn=3",
+]
 
 COUNTRIES_INCLUDE = [c.strip().lower() for c in os.getenv("COUNTRIES_INCLUDE", "").split(",") if c.strip()]
 COUNTRIES_EXCLUDE = [c.strip().lower() for c in os.getenv("COUNTRIES_EXCLUDE", "").split(",") if c.strip()]
@@ -29,10 +33,12 @@ EMAIL_FROM = os.getenv("EMAIL_FROM")
 EMAIL_TO = os.getenv("EMAIL_TO")
 
 
-def build_page_url(page_num):
-    if page_num == 1:
-        return BASE_URL
-    return f"{BASE_URL}&pn={page_num}"
+def load_urls():
+    if URLS_FILE.exists():
+        urls = [u.strip() for u in URLS_FILE.read_text(encoding="utf-8").splitlines() if u.strip() and not u.strip().startswith("#")]
+        if urls:
+            return urls
+    return DEFAULT_URLS
 
 
 def extract_country(region_text):
@@ -199,6 +205,7 @@ def send_email(offers):
 def main():
     all_offers = []
     seen_links = set()
+    urls = load_urls()
 
     stealth = Stealth()
 
@@ -206,15 +213,14 @@ def main():
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1920, "height": 1080}, locale="pl-PL")
 
-        for page_num in range(1, PAGES + 1):
-            url = build_page_url(page_num)
-            print(f"Strona {page_num}/{PAGES}: {url}")
+        for i, url in enumerate(urls, 1):
+            print(f"[{i}/{len(urls)}] {url}")
 
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(10000)
 
             if "Just a moment" in page.title():
-                print("  BŁĄD: Cloudflare nie przepuścił — pomijam stronę")
+                print("  BŁĄD: Cloudflare nie przepuścił — pomijam")
                 continue
 
             offers = scrape_offers(page)
@@ -223,7 +229,6 @@ def main():
             for o in offers:
                 if o.get("multi"):
                     locations = o["locations"]
-                    # Deduplicate by links
                     new_locs = [loc for loc in locations if loc["link"] not in seen_links]
                     for loc in new_locs:
                         seen_links.add(loc["link"])
@@ -231,7 +236,6 @@ def main():
                     if not o["title"] or not new_locs:
                         continue
 
-                    # Filter: keep locations that match country filters
                     matched = [loc for loc in new_locs if country_matches(extract_country(loc["region"]))]
                     rejected = [loc for loc in new_locs if not country_matches(extract_country(loc["region"]))]
 
@@ -239,9 +243,9 @@ def main():
                         print(f"  - {o['title']} | {extract_country(loc['region'])} (odfiltrowany)")
 
                     if matched:
-                        o["locations"] = matched
+                        o["locations"] = new_locs
                         all_offers.append(o)
-                        countries = ", ".join(extract_country(loc["region"]) for loc in matched)
+                        countries = ", ".join(extract_country(loc["region"]) for loc in new_locs)
                         print(f"  + {o['title']} | WIELE LOKALIZACJI ({countries})")
                 else:
                     if o["link"] in seen_links:

@@ -7,9 +7,10 @@ Automatyczny scraper ofert pracy z zagranicy z portalu [pracuj.pl](https://www.p
 - Scraping ofert zagranicznych z pracuj.pl (z obsługą Cloudflare via Playwright + stealth)
 - Obsługa ofert wielolokalizacyjnych (rozwijanie ukrytych lokalizacji)
 - Filtry krajów: pozytywne (tylko te) i negatywne (wyklucz te)
-- Konfigurowalna liczba stron do przeszukania
+- Dowolna lista URLi do scrapowania (konfigurowalna z panelu)
 - Email HTML z tabelą: nazwa oferty, widełki, kraj, link
-- Panel webowy z tabelą ofert i ustawieniami filtrów
+- Panel webowy z tabelą ofert i ustawieniami
+- Ręczne uruchamianie scrapera z poziomu panelu
 
 ## Wymagania
 
@@ -21,7 +22,7 @@ Automatyczny scraper ofert pracy z zagranicy z portalu [pracuj.pl](https://www.p
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install playwright python-dotenv flask
+pip install playwright python-dotenv flask playwright-stealth
 playwright install chromium
 ```
 
@@ -34,10 +35,6 @@ Skopiuj `.env.example` do `.env` i uzupełnij:
 COUNTRIES_INCLUDE=
 COUNTRIES_EXCLUDE=Niemcy,Francja,Holandia,Belgia,Irlandia,UK
 
-# Scraper
-PAGES=3
-BASE_URL=https://www.pracuj.pl/praca/zagranica;r,17?sc=0
-
 # SMTP
 SMTP_SERVER=mail.example.com
 SMTP_PORT=587
@@ -45,7 +42,15 @@ SMTP_USERNAME=user@example.com
 SMTP_PASSWORD=haslo
 EMAIL_FROM=user@example.com
 EMAIL_TO=odbiorca@example.com
+SEND_EMAIL=1
+
+# Panel webowy
+APP_SECRET=zmien-na-losowy-ciag
+APP_USER=coolkarz
+APP_PASS=Praca1
 ```
+
+Adresy URL do scrapowania definiuje się w pliku `urls.txt` (jeden URL na linię) lub z poziomu panelu webowego po zalogowaniu.
 
 ## Użycie
 
@@ -64,12 +69,20 @@ python3 app.py
 # http://localhost:5000
 ```
 
-Login do ustawień: `/login`
+#### Strona główna (`/`)
+Tabela z ofertami — publiczna, bez logowania.
+
+#### Logowanie (`/login`)
+Po zalogowaniu dostępne są ustawienia (`/settings`):
+- **Adresy URL** — lista stron pracuj.pl do scrapowania
+- **Filtry krajów** — pozytywne i negatywne
+- **Scrapuj teraz** — ręczne uruchomienie scrapera z poziomu przeglądarki
+- **Log scrapowania** — podgląd wyniku ostatniego uruchomienia
 
 ### Cron (codzienny scraping o 5:00)
 
 ```
-0 5 * * * cd /home/k4/pracuj.k4.pl/scraper && venv/bin/python3 scraper.py
+0 5 * * * cd /sciezka/do/scraper && venv/bin/python3 scraper.py
 ```
 
 ## Struktura
@@ -77,6 +90,7 @@ Login do ustawień: `/login`
 ```
 ├── scraper.py       # Główny skrypt scrapujący
 ├── app.py           # Panel webowy (Flask)
+├── urls.txt         # Lista URLi do scrapowania
 ├── offers.json      # Zapisane oferty (generowany automatycznie)
 ├── .env             # Konfiguracja
 ├── .env.example     # Przykład konfiguracji
@@ -85,5 +99,6 @@ Login do ustawień: `/login`
 │   ├── index.html
 │   ├── login.html
 │   └── settings.html
-└── start.sh         # Skrypt startowy serwera
+├── start.sh         # Start serwera
+└── stop.sh          # Stop serwera
 ```

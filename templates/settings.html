@@ -2,9 +2,13 @@
 {% block title %}Ustawienia — Pracuj.pl Scraper{% endblock %}
 
 {% block content %}
-<div class="card" style="max-width:600px">
-    <h2>Ustawienia filtrów</h2>
+<div class="card" style="max-width:700px">
+    <h2>Ustawienia</h2>
     <form method="POST">
+        <label for="urls">Adresy URL do scrapowania</label>
+        <textarea id="urls" name="urls" rows="6" style="width:100%;padding:10px 14px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;font-family:monospace;resize:vertical;margin-bottom:4px">{{ urls }}</textarea>
+        <p class="help">Jeden URL na linię. Mogą to być dowolne strony z wynikami wyszukiwania pracuj.pl.</p>
+
         <label for="include">Filtr pozytywny (tylko te kraje)</label>
         <input type="text" id="include" name="include" value="{{ include }}" placeholder="np. Norwegia,Szwecja,Dania">
         <p class="help">Jeśli puste — brane są wszystkie kraje (z wyjątkiem negatywnych). Oddzielaj przecinkami.</p>
@@ -13,7 +17,29 @@
         <input type="text" id="exclude" name="exclude" value="{{ exclude }}" placeholder="np. Niemcy,Francja,Holandia">
         <p class="help">Te kraje będą pomijane. Oddzielaj przecinkami.</p>
 
-        <button type="submit" style="margin-top:8px">Zapisz</button>
+        <button type="submit" style="margin-top:8px">Zapisz ustawienia</button>
     </form>
+</div>
+
+<div class="card" style="max-width:700px">
+    <h2>Ręczne scrapowanie</h2>
+    {% if status.running %}
+        <p><span class="badge" style="background:#dbeafe;color:#1e40af">Scraper działa...</span></p>
+        <p class="help" style="margin-top:8px">Odśwież stronę, żeby sprawdzić status.</p>
+    {% else %}
+        {% if status.last_run %}
+            <p class="meta">Ostatnie uruchomienie: {{ status.last_run }}</p>
+        {% endif %}
+        <form method="POST" action="/scrape" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Uruchamiam...'">
+            <button type="submit">Scrapuj teraz</button>
+        </form>
+    {% endif %}
+
+    {% if status.log %}
+        <details style="margin-top:16px">
+            <summary style="cursor:pointer;font-size:14px;color:#666">Pokaż log ostatniego scrapowania</summary>
+            <pre style="background:#1a1a2e;color:#e0e0e0;padding:16px;border-radius:8px;margin-top:8px;font-size:12px;max-height:400px;overflow:auto;white-space:pre-wrap">{{ status.log }}</pre>
+        </details>
+    {% endif %}
 </div>
 {% endblock %}

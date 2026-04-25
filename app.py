@@ -2,11 +2,14 @@
 
 import json
 import os
+import subprocess
+import threading
 from pathlib import Path
 from functools import wraps
+from datetime import datetime
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 
 load_dotenv()
 
@@ -17,6 +20,11 @@ APP_USER = os.getenv("APP_USER", "coolkarz")
 APP_PASS = os.getenv("APP_PASS", "Praca1")
 ENV_PATH = Path(__file__).parent / ".env"
 OFFERS_PATH = Path(__file__).parent / "offers.json"
+URLS_PATH = Path(__file__).parent / "urls.txt"
+SCRAPER_PATH = Path(__file__).parent / "scraper.py"
+VENV_PYTHON = Path(__file__).parent / "venv" / "bin" / "python3"
+
+scrape_status = {"running": False, "log": "", "last_run": None}
 
 
 def login_required(f):
@@ -63,6 +71,36 @@ def write_env_filters(include, exclude):
     ENV_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 
 
+def read_urls():
+    if URLS_PATH.exists():
+        return URLS_PATH.read_text(encoding="utf-8")
+    return ""
+
+
+def write_urls(text):
+    URLS_PATH.write_text(text.strip() + "\n", encoding="utf-8")
+
+
+def run_scraper_bg():
+    scrape_status["running"] = True
+    scrape_status["log"] = ""
+    try:
+        python = str(VENV_PYTHON) if VENV_PYTHON.exists() else "python3"
+        result = subprocess.run(
+            [python, str(SCRAPER_PATH)],
+            capture_output=True, text=True, timeout=600,
+            cwd=str(SCRAPER_PATH.parent),
+        )
+        scrape_status["log"] = result.stdout + result.stderr
+    except subprocess.TimeoutExpired:
+        scrape_status["log"] = "BŁĄD: Scraper przekroczył limit czasu (10 min)"
+    except Exception as e:
+        scrape_status["log"] = f"BŁĄD: {e}"
+    finally:
+        scrape_status["running"] = False
+        scrape_status["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 @app.route("/")
 def index():
     data = load_offers()
@@ -91,11 +129,32 @@ def settings():
     if request.method == "POST":
         include = request.form.get("include", "").strip()
         exclude = request.form.get("exclude", "").strip()
+        urls_text = request.form.get("urls", "").strip()
         write_env_filters(include, exclude)
-        flash("Filtry zapisane")
+        write_urls(urls_text)
+        flash("Ustawienia zapisane")
         return redirect(url_for("settings"))
     include, exclude = read_env_filters()
-    return render_template("settings.html", include=include, exclude=exclude)
+    urls = read_urls()
+    return render_template("settings.html", include=include, exclude=exclude, urls=urls, status=scrape_status)
+
+
+@app.route("/scrape", methods=["POST"])
+@login_required
+def scrape_now():
+    if scrape_status["running"]:
+        flash("Scraper już działa, poczekaj na zakończenie")
+    else:
+        thread = threading.Thread(target=run_scraper_bg, daemon=True)
+        thread.start()
+        flash("Scraper uruchomiony w tle — odśwież stronę za ~2 minuty")
+    return redirect(url_for("settings"))
+
+
+@app.route("/scrape-status")
+@login_required
+def scrape_status_api():
+    return jsonify(scrape_status)
 
 
 if __name__ == "__main__":
