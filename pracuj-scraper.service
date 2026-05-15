@@ -1,0 +1,14 @@
+[Unit]
+Description=Pracuj.pl Scraper Web Panel
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/k4/pracuj.k4.pl/scraper
+ExecStart=/home/k4/pracuj.k4.pl/scraper/venv/bin/python3 /home/k4/pracuj.k4.pl/scraper/app.py
+Restart=always
+RestartSec=5
+Environment=APP_PORT=8112
+
+[Install]
+WantedBy=default.target

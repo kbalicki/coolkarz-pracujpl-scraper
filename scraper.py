@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import time
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -216,14 +217,36 @@ def main():
         for i, url in enumerate(urls, 1):
             print(f"[{i}/{len(urls)}] {url}")
 
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(10000)
+            offers = None
+            for attempt in range(1, 4):
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                    page.wait_for_timeout(10000)
 
-            if "Just a moment" in page.title():
-                print("  BŁĄD: Cloudflare nie przepuścił — pomijam")
+                    if "Just a moment" in page.title():
+                        print(f"  Cloudflare (próba {attempt}/3)")
+                        if attempt < 3:
+                            page.wait_for_timeout(15000)
+                            continue
+                        print("  BŁĄD: Cloudflare nie przepuścił — pomijam")
+                        break
+
+                    offers = scrape_offers(page)
+                    break
+                except Exception as e:
+                    print(f"  BŁĄD (próba {attempt}/3): {e}")
+                    if attempt < 3:
+                        time.sleep(10 * attempt)
+                        try:
+                            page.close()
+                            page = browser.new_page(viewport={"width": 1920, "height": 1080}, locale="pl-PL")
+                        except Exception:
+                            pass
+
+            if offers is None:
+                print("  Pominięto po 3 nieudanych próbach")
                 continue
 
-            offers = scrape_offers(page)
             print(f"  Znaleziono {len(offers)} ofert")
 
             for o in offers:
