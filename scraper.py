@@ -2,9 +2,11 @@
 
 import json
 import os
+import subprocess
 import sys
 import time
 import smtplib
+import traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
@@ -16,7 +18,17 @@ from playwright_stealth import Stealth
 
 load_dotenv()
 
-URLS_FILE = Path(__file__).parent / "urls.txt"
+BASE_DIR = Path(__file__).resolve().parent
+
+# Własny katalog przeglądarek Playwrighta.
+# Domyślny wspólny cache (~/.cache/ms-playwright) bywa czyszczony przez
+# `playwright install` uruchomiony w innym projekcie na tym samym koncie -
+# wtedy znika binarka Chromium i scraper przestaje działać bez ostrzeżenia.
+if not os.getenv("PLAYWRIGHT_BROWSERS_PATH"):
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(BASE_DIR / ".playwright")
+
+URLS_FILE = BASE_DIR / "urls.txt"
+STATUS_FILE = BASE_DIR / "last_run.json"
 DEFAULT_URLS = [
     "https://www.pracuj.pl/praca/zagranica;r,17?sc=0",
     "https://www.pracuj.pl/praca/zagranica;r,17?sc=0&pn=2",
@@ -40,6 +52,39 @@ def load_urls():
         if urls:
             return urls
     return DEFAULT_URLS
+
+
+def write_status(ok, count=0, error=None):
+    STATUS_FILE.write_text(json.dumps({
+        "finished": datetime.now().isoformat(),
+        "ok": ok,
+        "count": count,
+        "error": error,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def install_browser():
+    print("  Brak binarki Chromium - instaluję do "
+          f"{os.environ['PLAYWRIGHT_BROWSERS_PATH']}")
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        capture_output=True, text=True, timeout=1800,
+    )
+    print(result.stdout[-2000:])
+    if result.returncode != 0:
+        print(result.stderr[-2000:])
+        raise RuntimeError(f"playwright install chromium zakończone kodem {result.returncode}")
+    print("  Chromium zainstalowany")
+
+
+def launch_browser(p):
+    try:
+        return p.chromium.launch(headless=True)
+    except Exception as e:
+        if "Executable doesn't exist" not in str(e):
+            raise
+        install_browser()
+        return p.chromium.launch(headless=True)
 
 
 def extract_country(region_text):
@@ -206,12 +251,13 @@ def send_email(offers):
 def main():
     all_offers = []
     seen_links = set()
+    failed_urls = []
     urls = load_urls()
 
     stealth = Stealth()
 
     with stealth.use_sync(sync_playwright()) as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_browser(p)
         page = browser.new_page(viewport={"width": 1920, "height": 1080}, locale="pl-PL")
 
         for i, url in enumerate(urls, 1):
@@ -245,6 +291,7 @@ def main():
 
             if offers is None:
                 print("  Pominięto po 3 nieudanych próbach")
+                failed_urls.append(url)
                 continue
 
             print(f"  Znaleziono {len(offers)} ofert")
@@ -289,13 +336,21 @@ def main():
 
     print(f"\nRazem ofert po filtrach: {len(all_offers)}")
 
-    offers_file = Path(__file__).parent / "offers.json"
+    # Gdy żaden URL się nie udał, nie kasujemy ostatnich dobrych wyników -
+    # inaczej awaria scrapera wygląda w panelu jak "brak ofert".
+    if failed_urls and len(failed_urls) == len(urls):
+        raise RuntimeError(f"Nie udało się pobrać żadnego z {len(urls)} adresów URL")
+
+    offers_file = BASE_DIR / "offers.json"
     offers_file.write_text(json.dumps({
         "date": datetime.now().isoformat(),
         "count": len(all_offers),
         "offers": all_offers,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Zapisano do {offers_file}")
+
+    if failed_urls:
+        print(f"UWAGA: {len(failed_urls)} z {len(urls)} adresów nie zostało pobranych")
 
     if os.getenv("SEND_EMAIL", "1") == "0":
         print("Wysyłka maili wyłączona (SEND_EMAIL=0)")
@@ -304,6 +359,18 @@ def main():
     else:
         print("Brak ofert spełniających kryteria — email nie został wysłany.")
 
+    return len(all_offers)
+
 
 if __name__ == "__main__":
-    main()
+    started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"=== Start: {started} ===")
+    try:
+        total = main()
+    except Exception as exc:
+        traceback.print_exc()
+        write_status(False, error=f"{type(exc).__name__}: {exc}")
+        print(f"=== Koniec z błędem: {datetime.now():%Y-%m-%d %H:%M:%S} ===")
+        sys.exit(1)
+    write_status(True, count=total)
+    print(f"=== Koniec OK: {datetime.now():%Y-%m-%d %H:%M:%S} ===")

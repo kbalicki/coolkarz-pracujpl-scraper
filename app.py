@@ -18,11 +18,17 @@ app.secret_key = os.getenv("APP_SECRET", "zmien-na-losowy-ciag-w-produkcji")
 
 APP_USER = os.getenv("APP_USER", "coolkarz")
 APP_PASS = os.getenv("APP_PASS", "Praca1")
-ENV_PATH = Path(__file__).parent / ".env"
-OFFERS_PATH = Path(__file__).parent / "offers.json"
-URLS_PATH = Path(__file__).parent / "urls.txt"
-SCRAPER_PATH = Path(__file__).parent / "scraper.py"
-VENV_PYTHON = Path(__file__).parent / "venv" / "bin" / "python3"
+BASE_DIR = Path(__file__).resolve().parent
+ENV_PATH = BASE_DIR / ".env"
+OFFERS_PATH = BASE_DIR / "offers.json"
+URLS_PATH = BASE_DIR / "urls.txt"
+SCRAPER_PATH = BASE_DIR / "scraper.py"
+STATUS_PATH = BASE_DIR / "last_run.json"
+VENV_PYTHON = BASE_DIR / "venv" / "bin" / "python3"
+
+# Po ilu godzinach bez świeżych danych panel pokazuje ostrzeżenie.
+# Cron chodzi raz na dobę o 5:00, więc 30 h daje zapas na jedno nieudane uruchomienie.
+STALE_AFTER_HOURS = int(os.getenv("STALE_AFTER_HOURS", "30"))
 
 scrape_status = {"running": False, "log": "", "last_run": None}
 
@@ -40,6 +46,39 @@ def load_offers():
     if not OFFERS_PATH.exists():
         return {"date": None, "count": 0, "offers": []}
     return json.loads(OFFERS_PATH.read_text(encoding="utf-8"))
+
+
+def load_last_run():
+    if not STATUS_PATH.exists():
+        return {}
+    try:
+        return json.loads(STATUS_PATH.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return {}
+
+
+def build_health(data):
+    """Wiek danych i wynik ostatniego uruchomienia scrapera."""
+    last_run = load_last_run()
+    age_hours = None
+    if data.get("date"):
+        try:
+            age_hours = round((datetime.now() - datetime.fromisoformat(data["date"])).total_seconds() / 3600, 1)
+        except ValueError:
+            age_hours = None
+
+    stale = age_hours is None or age_hours > STALE_AFTER_HOURS
+    return {
+        "ok": not stale and last_run.get("ok", True),
+        "stale": stale,
+        "age_hours": age_hours,
+        "stale_after_hours": STALE_AFTER_HOURS,
+        "last_update": data.get("date"),
+        "count": data.get("count", 0),
+        "last_run_ok": last_run.get("ok"),
+        "last_run_finished": last_run.get("finished"),
+        "last_run_error": last_run.get("error"),
+    }
 
 
 def read_env_filters():
@@ -92,6 +131,8 @@ def run_scraper_bg():
             cwd=str(SCRAPER_PATH.parent),
         )
         scrape_status["log"] = result.stdout + result.stderr
+        if result.returncode != 0:
+            scrape_status["log"] += f"\n[scraper zakończony kodem {result.returncode}]"
     except subprocess.TimeoutExpired:
         scrape_status["log"] = "BŁĄD: Scraper przekroczył limit czasu (10 min)"
     except Exception as e:
@@ -104,7 +145,14 @@ def run_scraper_bg():
 @app.route("/")
 def index():
     data = load_offers()
-    return render_template("index.html", data=data)
+    return render_template("index.html", data=data, health=build_health(data))
+
+
+@app.route("/health")
+def health():
+    """Status dla monitoringu: HTTP 200 gdy dane świeże, 503 gdy nie."""
+    info = build_health(load_offers())
+    return jsonify(info), (200 if info["ok"] else 503)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -136,7 +184,8 @@ def settings():
         return redirect(url_for("settings"))
     include, exclude = read_env_filters()
     urls = read_urls()
-    return render_template("settings.html", include=include, exclude=exclude, urls=urls, status=scrape_status)
+    return render_template("settings.html", include=include, exclude=exclude, urls=urls,
+                           status=scrape_status, health=build_health(load_offers()))
 
 
 @app.route("/scrape", methods=["POST"])
