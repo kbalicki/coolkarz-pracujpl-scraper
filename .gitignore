@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 offers.json
 last_run.json
+watchdog_state.json
 .playwright/
 *.log
 .claude/

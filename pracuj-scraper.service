@@ -1,6 +1,8 @@
 [Unit]
 Description=Pracuj.pl Scraper Web Panel
 After=network.target
+# Bez limitu prób startu - usługa nigdy nie ma zostać trwale w stanie failed
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

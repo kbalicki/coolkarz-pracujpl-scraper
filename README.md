@@ -13,6 +13,7 @@ Automatyczny scraper ofert pracy z zagranicy z portalu [pracuj.pl](https://www.p
 - Ręczne uruchamianie scrapera z poziomu panelu
 - Ostrzeżenie w panelu i endpoint `/health`, gdy dane przestaną się odświeżać
 - Własny katalog przeglądarek Playwrighta (odporny na kolizje z innymi projektami)
+- Watchdog: restartuje panel, sam naprawia scraper i wysyła mail o awarii
 
 ## Wymagania
 
@@ -113,10 +114,38 @@ Po zalogowaniu dostępne są ustawienia (`/settings`):
 - **Scrapuj teraz** — ręczne uruchomienie scrapera z poziomu przeglądarki
 - **Log scrapowania** — podgląd wyniku ostatniego uruchomienia
 
-### Cron (codzienny scraping o 5:00)
+### Cron (codzienny scraping o 5:00 + watchdog co godzinę)
 
 ```
-0 5 * * * cd /sciezka/do/scraper && venv/bin/python3 scraper.py
+0 5 * * * cd /sciezka/do/scraper && venv/bin/python3 scraper.py >> cron.log 2>&1
+15 * * * * cd /sciezka/do/scraper && /usr/bin/flock -n /tmp/pracuj-watchdog.lock venv/bin/python3 watchdog.py >> watchdog.log 2>&1
+```
+
+## Watchdog i alarmy
+
+`watchdog.py` chodzi co godzinę i pilnuje, żeby awaria nie została niezauważona:
+
+1. **Panel nie odpowiada** pod `/health` -> `systemctl --user restart pracuj-scraper`
+   i ponowne sprawdzenie przez pół minuty.
+2. **Dane nieaktualne** (starsze niż `STALE_AFTER_HOURS`) albo `last_run.json`
+   z `ok: false` -> jednorazowa próba naprawy, czyli uruchomienie scrapera.
+   Scraper sam doinstaluje brakującą przeglądarkę Playwrighta.
+3. **Problem został po naprawie** -> mail na `ALERT_EMAIL_TO`
+   (domyślnie `monitor@web-systems.pl`, nadawca `noreply@web-systems.pl`).
+4. **Problem ustąpił** -> mail „znowu działa". Jeśli watchdog naprawił awarię
+   zanim zdążył zaalarmować, wysyła krótką informację „naprawione automatycznie".
+
+Alarmy są niezależne od `SEND_EMAIL` (na produkcji maile z ofertami są wyłączone,
+ale alarmy mają chodzić zawsze). `ALERT_COOLDOWN_HOURS` ogranicza powtórki tego
+samego alarmu, `REPAIR_COOLDOWN_HOURS` - częstotliwość automatycznych napraw.
+Stan trzymany jest w `watchdog_state.json`.
+
+Watchdog przycina też `cron.log`, `watchdog.log` i `app.log`, gdy przekroczą 5 MB.
+
+Ręczne sprawdzenie i test wysyłki:
+
+```bash
+ssh s4-k4 'cd ~/pracuj.k4.pl/scraper && venv/bin/python3 watchdog.py'
 ```
 
 ## Struktura
@@ -124,6 +153,9 @@ Po zalogowaniu dostępne są ustawienia (`/settings`):
 ```
 ├── scraper.py       # Główny skrypt scrapujący
 ├── app.py           # Panel webowy (Flask)
+├── watchdog.py      # Watchdog (cron co godzinę): restart panelu, naprawa, alarmy
+├── alerts.py        # Wysyłka maili alarmowych
+├── requirements.txt # Wersje pakietów zgodne z produkcją
 ├── urls.txt         # Lista URLi do scrapowania
 ├── offers.json      # Zapisane oferty (generowany automatycznie)
 ├── last_run.json    # Wynik ostatniego uruchomienia scrapera (generowany automatycznie)
@@ -146,13 +178,27 @@ Po zalogowaniu dostępne są ustawienia (`/settings`):
 - Cron: `0 5 * * *` -> `venv/bin/python3 scraper.py >> cron.log 2>&1`
 - Na produkcji `SEND_EMAIL=0`, czyli oferty trafiają wyłącznie do panelu
 
+- Watchdog: `15 * * * *` -> `watchdog.py`, log w `watchdog.log`
+- Alarmy idą na `monitor@web-systems.pl` z `noreply@web-systems.pl` (mail.web-systems.pl:587)
+
 Aktualizacja kodu:
 
 ```bash
-rsync -av scraper.py app.py .env.example s4-k4:~/pracuj.k4.pl/scraper/
+rsync -av scraper.py app.py watchdog.py alerts.py requirements.txt .env.example s4-k4:~/pracuj.k4.pl/scraper/
 rsync -av templates/ s4-k4:~/pracuj.k4.pl/scraper/templates/
 ssh s4-k4 'systemctl --user restart pracuj-scraper'
 ```
+
+Zmiana pliku usługi wymaga dodatkowo:
+
+```bash
+rsync -av pracuj-scraper.service s4-k4:~/pracuj.k4.pl/scraper/
+ssh s4-k4 'cp ~/pracuj.k4.pl/scraper/pracuj-scraper.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user restart pracuj-scraper'
+```
+
+Edycja crontaba: **zawsze** `crontab -e` albo plik roboczy w `$HOME` / z `mktemp`.
+Nigdy stała nazwa w `/tmp` - to katalog współdzielony między kontami na serwerze
+i podstawiony cudzy plik potrafi podmienić cały crontab.
 
 ## Rozwiązywanie problemów
 

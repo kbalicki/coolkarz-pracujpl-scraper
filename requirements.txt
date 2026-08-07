@@ -1,0 +1,7 @@
+# Wersje zgodne z produkcją (s4.k4.pl, python 3.9).
+# Po zmianie wersji playwrighta trzeba pobrać nową przeglądarkę:
+#   PLAYWRIGHT_BROWSERS_PATH=$PWD/.playwright venv/bin/python3 -m playwright install chromium
+playwright==1.58.0
+playwright-stealth==2.0.3
+python-dotenv==1.2.1
+Flask==3.1.3
